@@ -1,6 +1,6 @@
 using Printf
 
-mutable struct Data{T}
+mutable struct DenseIterable{T}
     n::Int
     c::Vector{T}
     x::Vector{T}
@@ -18,7 +18,7 @@ mutable struct Data{T}
     time::T
     is_symmetric::Bool
 
-    function Data(C::AbstractArray{T}; rho=10, sigma=50, alpha=1.7, ε_abs=1e-4, ε_rel=0.0) where T
+    function DenseIterable(C::AbstractArray{T}; rho=10, sigma=50, alpha=1.7, ε_abs=1e-4, ε_rel=0.0) where T
         c = reshape(C, length(C))
         n = Int(sqrt(length(c)))
         z = ones(2*n); z_ = ones(2*n);
@@ -29,14 +29,14 @@ mutable struct Data{T}
     end
 end
 
-function print_info(data::Data)
+function print_info(data::DenseIterable)
     if mod(data.iteration, 500) == 0 || data.iteration == 0
         @printf("Iter \t  Objective \t Primal Res \t Dual Res \t Time (s) \n")
     end
     X = reshape(data.x, data.n, data.n)
-    Ax = A(data.x)
+    Ax = mul_A_dense(data.x)
     r_prim = norm(Ax .- 1, Inf)
-    r_dual = norm(data.x - data.c + At(data.y) + data.w, Inf)
+    r_dual = norm(data.x - data.c + mul_At_dense(data.y) + data.w, Inf)
 
     @printf("%d \t  %.5e \t %.5e \t %.5e \t %.5e\n",
         data.iteration,
@@ -56,22 +56,11 @@ function print_info(data::Data)
         done = false
     end
 
-    δw = data.sigma*(data.x_ - data.x)
-    δy = data.rho*(data.alpha*data.z_ .- data.alpha)
-    nzindices = data.c .!= 0
-    δw = δw[nzindices]
-    if (norm(δw + At(δy)[nzindices], Inf) <= data.ε_abs) && sum(δy) + sum(δw + abs.(δw))/2 <= -data.ε_abs
-        println("The problem is infeasible.")
-        println("Certificate:")
-        println("||δw + At(δy)||: ", norm(δw + At(δy)[nzindices], Inf))
-        println("sum(δy) + sum(δw_+): ", sum(δy) + sum(δw + abs.(δw))/2)
-        done = true
-    end
     return done
 end
 
-function admm(C; max_iterations=5000, kwargs...)
-    data = Data(C; kwargs...)
+function solve(C::Matrix; max_iterations=5000, kwargs...)
+    data = DenseIterable(C; kwargs...)
     done = print_info(data)
     while !done && data.iteration !== max_iterations
         data.time += @elapsed iterate!(data)
@@ -79,10 +68,10 @@ function admm(C; max_iterations=5000, kwargs...)
             done = print_info(data)
         end
     end
-    return data
+    return reshape(data.x, size(C, 1), size(C, 1)), data
 end
 
-function iterate!(data::Data)
+function iterate!(data::DenseIterable)
     solve_linear_system!(data)
     @. data.x_ = data.alpha*data.x_ + (1 - data.alpha)*data.x
     @. data.x = data.x_ + data.w/data.sigma
@@ -92,7 +81,7 @@ function iterate!(data::Data)
     data.iteration += 1
 end
 
-function project!(data::Data)
+function project!(data::DenseIterable)
     @inbounds for i = 1:length(data.x)
         if data.c[i] == 0 || data.x[i] <= 0
             data.x[i] = 0
@@ -102,17 +91,17 @@ function project!(data::Data)
     end
 end
 
-function solve_linear_system!(data::Data)
+function solve_linear_system!(data::DenseIterable)
     data.z .= data.rho .- data.y # Here data.z is used as a temporary variable
     data.z_ .= 0
     @inbounds for j = 1:data.n, i = 1:data.n
             idx = (j - 1)*data.n + i
             data.x_[idx] = data.sigma*data.x[idx] - data.w[idx] + data.z[i] + data.z[j + data.n] + data.c[idx]
-            # Equivalent to doing data.z_ .= A(data.x_) after the loop
+            # Equivalent to doing data.z_ .= mul_A_dense(data.x_) after the loop
             # data.z_[j + data.n] += data.x_[idx]
             # data.z_[i] += data.x_[idx]
     end
-    data.z_ .= A(data.x_, data.is_symmetric)
+    data.z_ .= mul_A_dense(data.x_, data.is_symmetric)
     solve_reduced_linear_system!(data.z_, data.rho, data.sigma)
     @inbounds for j = 1:data.n, i = 1:data.n
             idx = (j - 1)*data.n + i
@@ -120,7 +109,7 @@ function solve_linear_system!(data::Data)
     end
 end
 
-function A(x, is_symmetric=false)
+function mul_A_dense(x, is_symmetric=false)
     n = Int(sqrt(length(x)))
     X = reshape(x, n, n)
     sum_rows = reshape(sum(X, dims=1), n)
@@ -132,7 +121,7 @@ function A(x, is_symmetric=false)
     return [sum_cols; sum_rows]
 end
 
-function At(z)
+function mul_At_dense(z)
     n = div(length(z), 2)
     z1 = view(z, 1:n)
     z2 = view(z, n+1:2*n)
