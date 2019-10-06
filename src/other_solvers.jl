@@ -36,8 +36,9 @@ function doubly_stochastic_gurobi(C; scaling=1.0)
     model = gurobi_model(env, H=SparseMatrixCSC(1.0*I, n, n), f=-scaling*C.nzval, Aeq=A, beq=scaling*ones(m), lb=zeros(n))
     optimize(model)
     sol = get_solution(model)
-
-    return reshape(sol, size(C, 1), size(C, 2))
+    X = copy(C)
+    X.nzval .= sol
+    return X
 end
 
 function alternating_projections(C::Matrix; maxiters=5000, tol=1e-4)

@@ -5,8 +5,8 @@ include("../src/admm_dense.jl")
 include("load_problems.jl")
 include("../src/other_solvers.jl")
 
-normalize_data = false
-problem_set = :ocean # Other options :suitesparse or :random
+normalize_data = true
+problem_set = :random # Other options :suitesparse or :random
 
 parameters_set_suitespace = 1:100
 parameters_set_ocean = [(h, d) for d in 10.0^-1.1:-0.1:-1.3 for h in pi./[8; 16; 32; 64]][:]
@@ -45,9 +45,9 @@ for parameter in parameters_set[problem_set]
     end
 
     t_gurobi = 0.0; t = 0.0; iter = 0
-    # t_gurobi = @elapsed X_gurobi = doubly_stochastic_gurobi(C)
+    t_gurobi = @elapsed X_gurobi = doubly_stochastic_gurobi(C)
     t = @elapsed X, data = solve(C, max_iterations=20000, sigma=5, rho=50, alpha=1.6, ε_abs=1e-4)
-    # @show norm(X - X_gurobi)
+    @show norm(X - X_gurobi)
         
     push!(df, [name, size(C, 1), nnz(C), t, t_gurobi, iter])
     df |> CSV.write(string("../results/", problem_set, ".csv"))
