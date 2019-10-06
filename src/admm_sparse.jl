@@ -112,16 +112,10 @@ function print_info(data::SparseIterable)
 
     ratio = r_prim/r_dual
     if ratio > 20 && !done && data.update_rho
-        # set_phase!(data.ps, Pardiso.RELEASE_ALL)
-        # pardiso(data.ps)
-        # data.ps = MKLPardisoSolver()
         data.sigma *= 10; data.rho *= 10
         compute_factorization!(data)
     end
     if ratio < 1/20 && !done && data.update_rho
-        # set_phase!(data.ps, Pardiso.RELEASE_ALL)
-        # pardiso(data.ps)
-        # data.ps = MKLPardisoSolver()
         data.sigma /= 10; data.rho /= 10
         compute_factorization!(data)
     end
@@ -204,8 +198,6 @@ function solve_linear_system!(data::SparseIterable)
         end
     end
     data.z .= mul_A_sparse(data.C, data.x_./(data.H .+ data.sigma))
-    # set_phase!(data.ps, 33) # Solve, iterative refinement
-    # pardiso(data.ps, data.z_, data.F, data.z)
     data.z_ .= data.F\data.z
     # Change to sparse representation
     @inbounds for j in 1:data.n

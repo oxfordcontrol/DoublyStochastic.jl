@@ -1,0 +1,7 @@
+*.mat
+*.jld2
+*.data
+*.DOCUMENTATION
+*.KRnorm
+*.RAWobserved
+*.png
