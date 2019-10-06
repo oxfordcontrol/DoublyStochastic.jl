@@ -1,5 +1,6 @@
 using Printf
 using LinearAlgebra, SparseArrays, SuiteSparse
+using IterativeSolvers
 
 function generate_cost(C)
 	# Generates p such that diagm(0 => p) is the problem's hessian
@@ -32,10 +33,10 @@ end
 
 triangulize(X) = triangulize!(copy(X))
 
-mutable struct SparseIterable{T, Ti}
+mutable struct SparseIterable{T, Ti, Tf}
     n::Int
     C::SparseMatrixCSC{T, Ti}
-    F::SuiteSparse.CHOLMOD.Factor{T} # F::SparseMatrixCSC{T, Ti}
+    F::Tf # SuiteSparse.CHOLMOD.Factor{T}
     H::Vector{T}
     x::Vector{T}
     x_::Vector{T}
@@ -54,8 +55,9 @@ mutable struct SparseIterable{T, Ti}
     primal_residuals::Vector{T}
     dual_residuals::Vector{T}
     update_rho::Bool
+    indirect::Bool
 
-    function SparseIterable(C::SparseMatrixCSC{T, Ti}; rho=50.0, sigma=1.0, alpha=1.7, ε_abs=1e-4, ε_rel=0.0, print_interval=50) where {T, Ti}
+    function SparseIterable(C::SparseMatrixCSC{T, Ti}; rho=50.0, sigma=1.0, alpha=1.7, ε_abs=1e-4, ε_rel=0.0, print_interval=50, indirect=false) where {T, Ti}
         Cu = triangulize!(copy(C))
         n = size(Cu, 1)
         z = ones(n); z_ = ones(n);
@@ -64,8 +66,14 @@ mutable struct SparseIterable{T, Ti}
         H = generate_cost(Cu).diag
         Cu.nzval .*= H
 
-        new{T, Ti}(n, Cu, cholesky(sprandn(0, 0, 0.0)), H, 0*x, 0*copy(x), z, z_, w, y, sigma, rho, alpha, 0, ε_abs, ε_rel, 0.0,
-            print_interval, zeros(T, 0), zeros(T, 0), true)
+        if indirect
+            F = spzeros(0, 0)
+        else
+            F = cholesky(spzeros(0, 0))
+        end
+
+        new{T, Ti, typeof(F)}(n, Cu, F, H, 0*x, 0*copy(x), z, z_, w, y, sigma, rho, alpha, 0, ε_abs, ε_rel, 0.0,
+            print_interval, zeros(T, 0), zeros(T, 0), true, indirect)
     end
 end
 
@@ -83,9 +91,13 @@ function compute_factorization!(data::SparseIterable)
     @inbounds for i in 1:size(S, 1)
         S[i, i] += sums[i]
     end
-    print("Computing cholesky...")
-    data.F = cholesky(S)
-    println("  Done!")
+    if !data.indirect
+        t = @elapsed print("Computing cholesky...")
+        data.F = cholesky(S)
+        println("  Done in ", t, " seconds!")
+    else
+        data.F = S
+    end
 end
 
 function print_info(data::SparseIterable)
@@ -186,7 +198,7 @@ end
 
 function solve_linear_system!(data::SparseIterable)
     data.z .= data.rho .- data.y # Here data.z is used as a temporary variable
-    data.z_ .= 0
+    # data.z_ .= 0
     # Change to sparse representation
     @inbounds for j in 1:data.n
         for idx in data.C.colptr[j]:data.C.colptr[j+1]-1
@@ -198,7 +210,15 @@ function solve_linear_system!(data::SparseIterable)
         end
     end
     data.z .= mul_A_sparse(data.C, data.x_./(data.H .+ data.sigma))
-    data.z_ .= data.F\data.z
+    if !data.indirect
+        data.z_ .= data.F\data.z
+    else
+        if length(data.z_) == 0
+            data.z_ = copy(data.z)
+        end
+    
+        cg!(data.z_, data.F, data.z, tol=1.0/norm(data.z)/(data.iteration + 1)^1.5)
+    end
     # Change to sparse representation
     @inbounds for j in 1:data.n
         for idx in data.C.colptr[j]:data.C.colptr[j+1]-1
