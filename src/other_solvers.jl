@@ -1,5 +1,6 @@
 using LinearAlgebra, SparseArrays
 using Gurobi
+using MATLAB
 
 function generate_equality_constraints(C; symmetry=false)
     # Form A := [A1; A2]
@@ -57,4 +58,18 @@ function alternating_projections(C::Matrix; maxiters=5000, tol=1e-4)
         residuals[iter] = norm(row_sum .- 1, Inf)
     end
     return X, residuals[1:iter]
+end
+
+
+function bnewt(C)
+    X = copy(C)
+    d = mxcall(:bnewt, 1, abs.(X))
+    D = copy(X.nzval)
+    n = size(X, 1)
+    @inbounds for j in 1:n, idx in X.colptr[j]:X.colptr[j+1]-1
+        i = X.rowval[idx]
+        X.nzval[idx] *= d[i]*d[j]
+        D[idx] = d[i]*d[j]
+    end
+    return X, d
 end

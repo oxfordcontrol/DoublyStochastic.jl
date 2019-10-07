@@ -25,7 +25,7 @@ function triangulize!(X)
         if j == i
             X.nzval[idx] /= 2
         elseif j < i
-            X.nzval[idx] =0
+            X.nzval[idx] = 0
         end
     end
     return dropzeros!(X)
@@ -57,22 +57,24 @@ mutable struct SparseIterable{T, Ti, Tf}
     update_rho::Bool
     indirect::Bool
 
-    function SparseIterable(C::SparseMatrixCSC{T, Ti}; rho=50.0, sigma=1.0, alpha=1.7, ε_abs=1e-4, ε_rel=0.0, print_interval=50, indirect=false) where {T, Ti}
+    function SparseIterable(C::SparseMatrixCSC{T, Ti}; rho=T(50.0), sigma=T(1.0), alpha=T(1.7),
+        ε_abs=T(1e-4), ε_rel=T(0.0),
+        print_interval=Ti(50), indirect=false) where {T, Ti}
+
         Cu = triangulize!(copy(C))
         n = size(Cu, 1)
-        z = ones(n); z_ = ones(n);
-        w = zeros(nnz(Cu)); y = zeros(n)
+        z = ones(T, n); z_ = ones(T, n);
+        w = zeros(T, nnz(Cu)); y = zeros(T, n)
         x = copy(Cu.nzval)
         H = generate_cost(Cu).diag
         Cu.nzval .*= H
 
-        if indirect
-            F = spzeros(0, 0)
-        else
-            F = cholesky(spzeros(0, 0))
+        F = spzeros(T, Ti, zero(Ti), zero(Ti))
+        if !indirect
+            F = cholesky(F)
         end
 
-        new{T, Ti, typeof(F)}(n, Cu, F, H, 0*x, 0*copy(x), z, z_, w, y, sigma, rho, alpha, 0, ε_abs, ε_rel, 0.0,
+        new{T, Ti, typeof(F)}(n, Cu, F, H, 0*x, 0*copy(x), z, z_, w, y, sigma, rho, alpha, zero(Ti), ε_abs, ε_rel, zero(T),
             print_interval, zeros(T, 0), zeros(T, 0), true, indirect)
     end
 end
@@ -92,8 +94,8 @@ function compute_factorization!(data::SparseIterable)
         S[i, i] += sums[i]
     end
     if !data.indirect
-        t = @elapsed print("Computing cholesky...")
-        data.F = cholesky(S)
+        print("Computing cholesky...")
+        t = @elapsed data.F = cholesky(S)
         println("  Done in ", t, " seconds!")
     else
         data.F = S
@@ -196,17 +198,12 @@ function project!(data::SparseIterable)
     end
 end
 
-function solve_linear_system!(data::SparseIterable)
+function solve_linear_system!(data::SparseIterable{T, Ti, Tf}) where {T, Ti, Tf}
     data.z .= data.rho .- data.y # Here data.z is used as a temporary variable
-    # data.z_ .= 0
-    # Change to sparse representation
     @inbounds for j in 1:data.n
         for idx in data.C.colptr[j]:data.C.colptr[j+1]-1
             i = data.C.rowval[idx]
             data.x_[idx] = data.sigma*data.x[idx] - data.w[idx] + data.z[i] + data.z[j] + data.C.nzval[idx]
-            # Equivalent to doing data.z_ .= A(data.x_) after the loop
-            # data.z_[j] += data.x_[idx]
-            # data.z_[i] += data.x_[idx]
         end
     end
     data.z .= mul_A_sparse(data.C, data.x_./(data.H .+ data.sigma))
@@ -217,9 +214,8 @@ function solve_linear_system!(data::SparseIterable)
             data.z_ = copy(data.z)
         end
     
-        cg!(data.z_, data.F, data.z, tol=1.0/norm(data.z)/(data.iteration + 1)^1.5)
+        cg!(data.z_, data.F, data.z, tol=T(1.0/norm(data.z)/(data.iteration + 1)^1.5))
     end
-    # Change to sparse representation
     @inbounds for j in 1:data.n
         for idx in data.C.colptr[j]:data.C.colptr[j+1]-1
             i = data.C.rowval[idx]
