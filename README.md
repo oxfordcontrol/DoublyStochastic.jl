@@ -11,33 +11,14 @@ where `C` is a given, symmetric matrix and `X` in the `n x n` matrix variable. T
 
 The main reference for this package is
 ```
-Rontsis, N., and Goulart, P.
-Doubly Stochastic Matrix Approximation in the Frobenius Norm.
-Preprint Submitted to arXiv
+N. Rontsis and P. Goulart.
+Optimal Approximation of Doubly Stochastic Matrices.
+International Conference on Artificial Intelligence and Statistics. PMLR, 2020.
 ```
 
-## Installation
-This package can be installed by running
-```
-add https://github.com/oxfordcontrol/DoublyStochastic.jl
-```
-in [Julia's Pkg REPL mode](https://docs.julialang.org/en/v1/stdlib/Pkg/index.html#Getting-Started-1).
 ## Documentation
-### Standard TRS
-For small problems run:
+Run:
 ```julia
-doubly_stochastic(C, max_iterations; kwargs...) -> x, info
+solve(C, max_iterations; kwargs...) -> Matrix, SparseIterable/DenseIterable
 ```
-**Arguments** (`T` is any real numerical type):
-* `P`: The quadratic cost represented as any linear operator implementing `mul!`, `issymmetric` and `size`.
-* `q::AbstractVector{T}`: the linear cost.
-* `r::T`: the radius.
-
-**Output**
-* `X::Matrix{T}`: Array with each column containing a global solution to the TRS
-* `info::TRSInfo{T}`: Info structure. See [below](#the-trsinfo-struct) for details.
-
-**Keywords (optional)**
-* `tol`, `maxiter`, `ncv` and `v0` that are passed to `eigs` used to solve the underlying eigenproblem. Refer to `Arpack.jl`'s [documentation](https://julialinearalgebra.github.io/Arpack.jl/stable/) for these arguments. Of particular importance is **`tol::T`** which essentially controls the **accuracy** of the returned solutions.
-* `tol_hard=2e-7`: Threshold for switching to the hard-case. Refer to [Adachi et al.](https://epubs.siam.org/doi/pdf/10.1137/16M1058200), Section 4.2 for an explanation.
-* `compute_local::Bool=False`: Whether the local-no-global solution should be calculated. More details [below](#finding-local-no-global-minimizers).
+imported from `src/admm_sparse.jl` for sparse problems or `src/admm_dense.jl` for dense problems.
